@@ -7,8 +7,9 @@ from random import randint
 
 from db import HeroCreator, Adventurer, session_scope
 
+BASEDIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(BASEDIR+'/../.env', override= True)
 
-load_dotenv(override= True)
 TOKEN = os.getenv('DISCORD_TOKEN')
 
 
@@ -20,8 +21,27 @@ class State:
     test_msg = None
     creators = dict()
     characters = dict()
+    renames = dict()
 
+class Rename:
+    def __init__(self, user, charid):
+        self.user = user
+        self.charid = charid
+    def apply_text(self, text):
+        with session_scope() as session:
+            char = Adventurer.get_by_id(session,self.charid)
+            char.description = text
+            char.save(session)
 
+stat_to_russian = {
+    'careful':'аккуратность',
+    'flashy': 'эффектность',
+    'quick':'проворность',
+    'strong':'сила',
+    'clever':'ум',
+    'sneaky':'хитрость',
+    'rich':'достаток'
+}
 
 class Stat(commands.Converter):
     async def convert(self, ctx, argument):
@@ -65,6 +85,66 @@ async def char(ctx):
     """
     print('char command')
     pass
+
+@char.group()
+async def change(ctx):
+    pass
+
+@change.command()
+async def description(ctx, name : typing.Optional[str]):
+    """Изменяет описание персонажа"""
+    chan = ctx.channel.id
+    if chan in State.creators:
+        if not State.creators[chan].done:
+            await ctx.send('Этот канал занят! Измените описание персонажа в другом канале.')
+            return
+    if chan in State.renames:
+        await ctx.send('Этот канал занят! Измените описание персонажа в другом канале.')
+        return
+    with session_scope() as session:
+        char = None
+        if name is None:
+            if ctx.author.id not in State.characters:
+                await ctx.send("Укажите имя персонажа или используйте команду char switch для выбора персонажа по умолчанию")
+                return
+            charid = State.characters[ctx.author.id]
+            char = Adventurer.get_by_id(session,charid)
+            print(f'upgrage {char}')
+        else:
+            heroes = Adventurer.name_owner_search(session,name,ctx.author.id)
+            if len(heroes)==0:
+                await ctx.send('Герой не найден!')
+                return
+            elif len(heroes)==1:
+                char = heroes[0]
+            else:
+                msg = 'Найдено несколько, уточните:\n'
+                for hero in heroes:
+                    msg += f'{hero.name}\n'
+                await ctx.send(msg)
+                return
+        State.renames[chan] = Rename(ctx.author, char.id)
+        await ctx.send('Новое описание персонажа:')
+
+
+@change.command()
+async def name(ctx, name: str, new_name: str):
+    """Переименовывает персонажа"""
+    with session_scope() as session:
+        heroes = Adventurer.name_owner_search(session,name,ctx.author.id)
+        if len(heroes)==0:
+            await ctx.send('Герой не найден!')
+        elif len(heroes)==1:
+            old_name = heroes[0].name
+            heroes[0].name = new_name
+            heroes[0].save(session)
+            await ctx.send(f'{old_name} -> {new_name}')
+        else:
+            msg = 'Найдено несколько, уточните:\n'
+            for hero in heroes:
+                user = await bot.fetch_user(hero.owner_id)
+                msg += f'{hero.name} ({user.display_name})\n'
+            await ctx.send(msg)
 
 @char.command()
 async def make(ctx):
@@ -128,6 +208,44 @@ async def cancel(ctx):
     else:
         await ctx.send('Здесь не создаётся персонаж.')
 
+@char.command()
+async def upgrade(ctx, stat: Stat, name : typing.Optional[str]):
+    with session_scope() as session:
+        char = None
+        if name is None:
+            if ctx.author.id not in State.characters:
+                await ctx.send("Укажите имя персонажа или используйте команду char switch для выбора персонажа по умолчанию")
+                return
+            charid = State.characters[ctx.author.id]
+            char = Adventurer.get_by_id(session,charid)
+            print(f'upgrage {char}')
+        else:
+            heroes = Adventurer.name_owner_search(session,name,ctx.author.id)
+            if len(heroes)==0:
+                await ctx.send('Герой не найден!')
+                return
+            elif len(heroes)==1:
+                char = heroes[0]
+            else:
+                msg = 'Найдено несколько, уточните:\n'
+                for hero in heroes:
+                    msg += f'{hero.name}\n'
+                await ctx.send(msg)
+                return
+        if char.exp is None:
+            char.exp=0
+            char.save(session)
+            await ctx.send("Нет опыта!")
+            return
+        if char.exp<1:
+            await ctx.send("Нет опыта!")
+            return
+        char.exp-=1
+        old_stat = char.get_stat(stat)
+        char.set_stat(stat, old_stat+1)
+        char.save(session)
+        stat_ru = stat_to_russian[stat].capitalize()
+        await ctx.send(f"{stat_ru} {old_stat} -> {old_stat+1}.Осталось опыта: {char.exp}")
 
 @bot.command()
 async def roll(ctx, stat: Stat, name : typing.Optional[str]):
@@ -230,6 +348,25 @@ async def give(ctx, name : str, amount : int):
                 msg += f'{hero.name} ({user.display_name})\n'
             await ctx.send(msg)
 
+@fate.command()
+@commands.has_role("Повелитель бота")
+async def giveexp(ctx, name : str, amount : int):
+    with session_scope() as session:
+        heroes = Adventurer.name_search(session,name)
+        if len(heroes)==0:
+            await ctx.send('Герой не найден!')
+        elif len(heroes)==1:
+            if heroes[0].exp is None:
+                heroes[0].exp=0
+            heroes[0].exp+=amount
+            heroes[0].save(session)
+            await ctx.send(f'{heroes[0].name} теперь имеет {heroes[0].exp} очков опыта')
+        else:
+            msg = 'Найдено несколько, уточните:\n'
+            for hero in heroes:
+                user = await bot.fetch_user(hero.owner_id)
+                msg += f'{hero.name} ({user.display_name})\n'
+            await ctx.send(msg)
 
 @bot.command()
 @commands.has_role("Повелитель бота")
@@ -256,6 +393,10 @@ async def on_message(message):
     if chan in State.creators:
         if message.author == State.creators[chan].user:
             await State.creators[chan].add_text(message.content)
+    if chan in State.renames:
+        if message.author == State.renames[chan].user:
+            State.renames.pop(chan).apply_text(message.content)
+            await message.channel.send('Готово!')
     await bot.process_commands(message)
 
 

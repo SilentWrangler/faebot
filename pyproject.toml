@@ -11,6 +11,8 @@ python = "^3.7"
 SQLAlchemy = "^1.4.26"
 alembic = "^1.7.4"
 contextlib3 = "^3.10.0"
+python-dotenv = "^0.19.1"
+mysqlclient = "^2.0.3"
 
 [tool.poetry.dev-dependencies]
 

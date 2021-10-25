@@ -5,11 +5,24 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from ..db import Base
+from faebot.db import Base
+from dotenv import load_dotenv
+import os
+
+BASEDIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(BASEDIR+'/../.env')
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
+USER = os.getenv('DB_USER')
+PASS = os.getenv('DB_PASS')
+HOST = os.getenv('DB_HOST')
+NAME = os.getenv('DB_NAME')
+
+database_url = f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8'
+config.set_main_option('sqlalchemy.url', database_url )
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 fileConfig(config.config_file_name)

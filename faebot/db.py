@@ -7,8 +7,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 from dotenv import load_dotenv
-
-load_dotenv()
+BASEDIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(BASEDIR+'/../.env')
 
 USER = os.getenv('DB_USER')
 PASS = os.getenv('DB_PASS')
@@ -53,6 +53,7 @@ class Adventurer(Base):
     #Variables
     stress = Column(Integer)
     fate = Column(Integer)
+    exp = Column(Integer)
     #--------------
     def get_stat(self, stat):
         stats = {
@@ -66,7 +67,28 @@ class Adventurer(Base):
 
             }
         return stats[stat]
-
+    def set_stat(self, stat, value):
+        if stat=='careful':
+            self.careful=value
+            return
+        if stat=='flashy':
+            self.flashy=value
+            return
+        if stat=='quick':
+            self.quick=value
+            return
+        if stat=='strong':
+            self.strong=value
+            return
+        if stat=='clever':
+            self.clever=value
+            return
+        if stat=='sneaky':
+            self.sneaky=value
+            return
+        if stat=='rich':
+            self.rich=value
+            return
     def make_check(self, stat):
         base  = self.get_stat(stat)
         rolls = []
@@ -83,7 +105,7 @@ class Adventurer(Base):
         return [
             (
             f'Имя: {self.name}\n'
-            f'Очки судьбы: {self.fate} Стресс:{self.stress}\n'
+            f'Очки судьбы: {self.fate} Стресс:{self.stress} Очки опыта:{self.exp}\n'
             f'============ОПИСАНИЕ И АСПЕКТЫ=============\n'),
             f'{self.description}\n',
             (
