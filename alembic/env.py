@@ -21,7 +21,9 @@ PASS = os.getenv('DB_PASS')
 HOST = os.getenv('DB_HOST')
 NAME = os.getenv('DB_NAME')
 
-database_url = f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8'
+#database_url = f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8'
+database_url = 'sqlite:///testbase.db?charset=utf8'
+
 config.set_main_option('sqlalchemy.url', database_url )
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

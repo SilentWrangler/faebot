@@ -15,8 +15,8 @@ PASS = os.getenv('DB_PASS')
 HOST = os.getenv('DB_HOST')
 NAME = os.getenv('DB_NAME')
 
-engine = create_engine(f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8', encoding='utf8')
-#engine = create_engine('sqlite:///:memory:', echo=True)
+#engine = create_engine(f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8', encoding='utf8')
+engine = create_engine('sqlite:///testbase.db?charset=utf8', echo=True)
 Session = sessionmaker(bind=engine)
 
 
@@ -119,6 +119,18 @@ class Adventurer(Base):
             f'Достаток: {self.rich}'
             )
             ]
+    @property
+    def stats_message(self):
+        return (
+		    f'Аккуратность: {self.careful}\n'
+		    f'Эффектность: {self.flashy}\n'
+		    f'Проворность: {self.quick}\n'
+	        f'Сила: {self.strong}\n'
+	        f'Ум: {self.clever}\n'
+	        f'Хитрость: {self.sneaky}\n'
+	        f'Достаток: {self.rich}'
+        )
+	
     def save(self, session):
         session.add(self)
         session.commit()
@@ -290,3 +302,72 @@ class HeroCreator:
 
 
 
+
+class HeroCreatorV2:
+	def __init__(self,ctx, name, description):
+		self.ctx = ctx
+		self.hero = Adventurer(
+			fate = 3, stress = 0, exp = 0,
+			owner_id = int(ctx.user.id),
+			name = name, description = description
+		)
+		self.stats = [3,2,2,1,1,1,0]
+		self.stat_picks = [-1,-1,-1,-1,-1,-1,-1]
+		self.stat_names = ['Аккуратность','Эффектность','Проворность','Сила','Ум','Хитрость','Достаток']
+		self.selected_stat = 0
+		self.done = True
+		
+	@property
+	def message(self):
+			msg = f"**{self.hero.name}**\n\n"
+			dsc = self.hero.description
+			if len(dsc)>200:
+				dsc = dsc[0:200] + "(...)"
+			msg += dsc
+			
+			msg += f'\n Подходы: {self.stats}\n'
+			stat = ''
+			for i in range(len(self.stat_picks)):
+				stat += "> " if i==self.selected_stat else "+ "
+				stat += self.stat_names[i]
+				stat += " -" if self.stat_picks[i] == -1 else f" {self.stat_picks[i]}"
+				stat += "\n"
+			msg += stat
+			return msg
+		
+	@property
+	def stats_left(self):
+		return len(self.stats)
+		
+	def change_selected_stat(self, direction):
+		self.selected_stat += direction
+		if self.selected_stat < 0:
+			self.selected_stat = 0
+		if self.selected_stat >= len(self.stat_picks):
+			self.selected_stat = len(self.stat_picks) - 1
+	
+	def pick_selected_stat(self, stat):
+		if stat in self.stats:
+			self.stat_picks[self.selected_stat] = stat
+			self.stats.remove(stat)
+		elif stat in self.stat_picks:
+			idx = self.stat_picks.index(stat)
+			self.stat_picks[idx], self.stat_picks[self.selected_stat] = self.stat_picks[self.selected_stat], self.stat_picks[idx]
+	
+	def finish(self):
+		self.hero.careful = self.stat_picks[0]
+		self.hero.flashy  = self.stat_picks[1]
+		self.hero.quick   = self.stat_picks[2]
+		self.hero.strong  = self.stat_picks[3]
+		self.hero.clever  = self.stat_picks[4]
+		self.hero.sneaky  = self.stat_picks[5]
+		self.hero.rich    = self.stat_picks[6]
+		
+		with session_scope() as s:
+			s.add(self.hero)
+			s.commit()
+			s.close()
+			self.message  = None
+			self.done = True
+			
+	
