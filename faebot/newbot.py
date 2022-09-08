@@ -273,6 +273,21 @@ async def switch(ctx, name: str):
 		else:
 			msg = 'Найдено несколько, уточните:\n'
 			for hero in heroes:
+				if hero.name == name:
+					try:
+						embed = interactions.Embed(title = hero.name)
+						embed.add_field("Ресрурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
+						embed.add_field("Подходы", hero.stats_message)
+						print(embed)
+						description_embed = interactions.Embed(
+							title = hero.name,
+							description = hero.description
+						)
+						msg = await ctx.send("Найденный герой:", embeds = [description_embed, embed, ])
+						State.characters[ctx.author.id] = hero.id
+						return interactions.StopCommand
+					except Exception as ex:
+						print(f"Error: {e}")
 				msg += f'{hero.name}\n'
 			await ctx.send(msg)
 
@@ -308,7 +323,8 @@ async def roll_dice(ctx, dice: str):
 		result.append(randint(1,sides))
 		
 	await ctx.send(f"{dice}: {sum(result)} {result}")
-
+#START FATE ROLL SECTION
+#======================================
 @roll.subcommand(name = "fate", description = "Бросок по системе FATE")
 async def roll_fate(ctx):
 
@@ -334,8 +350,6 @@ async def roll_fate(ctx):
 		],
 		
 	)
-	
-	
 
 @bot.component("menu_component_approach")
 async def select_approach(ctx, approach: str):
@@ -412,10 +426,19 @@ async def proceed_with_fate_roll(ctx, char_name: str, pic_url: typing.Optional[s
 				total, result = heroes[0].make_check(approach)
 			else:
 				msg = 'Найдено несколько, уточните:\n'
+				notFound = True
 				for hero in heroes:
+					if hero.name == name: #Exact name match
+						State.characters[ctx.author.id] = hero.id
+						mod = hero.get_stat(approach)
+						title = f"{hero.name} делает проверку на {stat_to_russian[approach]} ({'+' if mod>0 else ''}{mod})"
+						total, result = hero.make_check(approach)
+						notFound = False
+						break
 					msg += f'{hero.name}\n'
-				await ctx.send(msg, ephemeral = True)
-				return interactions.StopCommand
+				if notFound:
+					await ctx.send(msg, ephemeral = True)
+					return interactions.StopCommand
 	embeds = []
 	mech_embed = interactions.Embed(
 		title = title,
@@ -433,4 +456,94 @@ async def proceed_with_fate_roll(ctx, char_name: str, pic_url: typing.Optional[s
 	embeds.append(mech_embed)
 	await ctx.send(embeds = embeds)
 	
+#======================================
+#END FATE ROLL SECTION
+
+@bot.command()
+async def gm(ctx):
+	"""Команды для гейммастера, должны ограничиваться разрешением"""
+	pass
+
+@gm.group(name = "fate", description = "Управление жетонами судьбы")
+async def gm_fate(ctx):
+    pass
+	
+@gm_fate.subcommand(name = "give", description = "Выдать/отобрать жетоны судьбы")
+@interactions.option(description = "Имя персонажа, которому выдаются жетоны")
+@interactions.option(description = "Количество жетонов. Отрицательное, если надо отобрать")
+async def gm_fate_give(ctx, char_name: str, amount: int):
+	print("gm_fate_give")
+	with session_scope() as session:
+		print("	session open")
+		heroes = Adventurer.name_search(session,char_name)
+		print("	search performed")
+		old_fate, new_fate = 0, 0
+		full_name = char_name
+		print(heroes)
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+			return interactions.StopCommand
+		elif len(heroes)==1:
+			old_fate = heroes[0].fate
+			heroes[0].fate += amount
+			new_fate = heroes[0].fate
+			heroes[0].save(session)
+			full_name = heroes[0].name
+		else:
+			msg = 'Найдено несколько, уточните:\n'
+			notFound = True
+			for hero in heroes:
+				if hero.name == char_name: #Exact name match
+					old_fate = hero.fate
+					hero.fate += amount
+					new_fate = hero.fate
+					hero.save(session)
+					full_name = hero.name
+					notFound = False
+					break
+				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
+				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
+			if notFound:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		await ctx.send(f'{full_name}: жетоны судьбы {old_fate} → {new_fate}')
+
+
+@gm_fate.subcommand(name = "set", description = "Установить количество жетонов судьбы")
+@interactions.option(description = "Имя персонажа, которому выдаются жетоны")
+@interactions.option(description = "Количество жетонов.")
+async def gm_fate_set(ctx, char_name: str, amount: int):
+	with session_scope() as session:
+		heroes = Adventurer.name_search(session,char_name)
+		old_fate, new_fate = 0, 0
+		full_name = char_name
+		print(heroes)
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+			return interactions.StopCommand
+		elif len(heroes)==1:
+			old_fate = heroes[0].fate
+			heroes[0].fate += amount
+			new_fate = heroes[0].fate
+			heroes[0].save(session)
+			full_name = heroes[0].name
+		else:
+			msg = 'Найдено несколько, уточните:\n'
+			notFound = True
+			for hero in heroes:
+				if hero.name == char_name: #Exact name match
+					old_fate = hero.fate
+					hero.fate += amount
+					new_fate = hero.fate
+					hero.save(session)
+					full_name = hero.name
+					notFound = False
+					break
+				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
+				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
+			if notFound:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		await ctx.send(f'{full_name}: жетоны судьбы {old_fate} → {new_fate}')
+
 bot.start()
