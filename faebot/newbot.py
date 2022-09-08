@@ -15,8 +15,20 @@ load_dotenv(BASEDIR+'/../.env', override= True)
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot = interactions.Client(token=TOKEN)
 
+stat_to_russian = {
+    'careful':'аккуратность',
+    'flashy': 'эффектность',
+    'quick':'проворность',
+    'strong':'сила',
+    'clever':'ум',
+    'sneaky':'хитрость',
+    'rich':'достаток'
+}
+
 class State:
 	creators = dict()
+	characters = dict()
+	roll_approaches = dict()
 
 @bot.command(
 	name = "test",
@@ -194,8 +206,9 @@ async def creation_done(ctx):
 
 
 @char.subcommand()
-@interactions.option()
-async def look(ctx: interactions.CommandContext, name: str):
+@interactions.option(description = "Имя персонажа. Оставить пустым, чтобы просмотреть всех.", required = False)
+async def look(ctx: interactions.CommandContext, name: str = ""):
+	"""Просмотреть профиль героя"""
 	with session_scope() as session:
 		heroes = Adventurer.name_search(session,name)
 		print(heroes)
@@ -223,4 +236,187 @@ async def look(ctx: interactions.CommandContext, name: str):
 				msg += f'{hero.name} ({user.display_name})\n'
 			await ctx.send(msg)
 
+
+@char.subcommand()
+@interactions.option(description = "Имя персонажа. Оставить пустым, чтобы просмотреть всех.")
+async def switch(ctx, name: str):
+	"""Переключиться на героя"""
+	with session_scope() as session:
+		heroes = Adventurer.name_owner_search(session,name,ctx.author.id)
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!')
+		elif len(heroes)==1:
+			embed = interactions.Embed(title = heroes[0].name)
+			embed.add_field("Ресрурсы",f'**Жетоны:** {heroes[0].fate} **Стресс:** {heroes[0].stress} **Опыт:** {heroes[0].exp}')
+			embed.add_field("Подходы", heroes[0].stats_message)
+			print(embed)
+			description_embed = interactions.Embed(
+				title = heroes[0].name,
+				description = heroes[0].description
+			)
+			msg = await ctx.send("Найденный герой:", embeds = [embed, description_embed])
+			State.characters[ctx.author.id] = heroes[0].id
+		else:
+			msg = 'Найдено несколько, уточните:\n'
+			for hero in heroes:
+				msg += f'{hero.name}\n'
+			await ctx.send(msg)
+
+@bot.command()
+async def roll(ctx):
+	"""Бросок костей"""
+	pass
+
+@roll.error
+async def roll_error(ctx,error):
+	await ctx.send(str(error), ephemeral=True)
+
+@roll.subcommand(name = "dice", description = "Бросок костей в формате XdY")
+@interactions.option(description = "Бросок формата XdY, где X - количество костей, а Y - количество граней")
+async def roll_dice(ctx, dice: str):
+	result = []
+	rolls = 0
+	sides = 0
+	if dice.lower().startswith('d'):
+		try:
+			rolls = 1
+			sides = int(dice[1:])
+		except ValueError:
+			raise ValueError("Неверный формат броска")
+	else:
+		try:
+			rolls_s, sides_s = dice.lower().split('d')
+			rolls = int(rolls_s)
+			sides = int(sides_s)
+		except Exception:
+			raise Exception("Неверный формат броска")
+	for i in range(rolls):
+		result.append(randint(1,sides))
+		
+	await ctx.send(f"{dice}: {sum(result)} {result}")
+
+@roll.subcommand(name = "fate", description = "Бросок по системе FATE")
+async def roll_fate(ctx):
+
+	await ctx.send(
+		"Выберите подход:",
+		components =[
+			interactions.SelectMenu(
+				placeholder = "Выберите подход...",
+				custom_id = "menu_component_approach",
+				options = [
+					interactions.SelectOption( value = "careful", label = "Аккуратность"),
+					interactions.SelectOption( value = "flashy", label = "Эффектность"),
+					interactions.SelectOption( value = "quick", label = "Проворность"),
+					interactions.SelectOption( value = "strong", label = "Сила"),
+					interactions.SelectOption( value = "clever", label = "Ум"),
+					interactions.SelectOption( value = "sneaky", label = "Хитрость"),
+					interactions.SelectOption( value = "rich", label = "Достаток"),
+					interactions.SelectOption( value = "minion_0", label = "Миньон: нет модификатора (0)"),
+					interactions.SelectOption( value = "minion_+2", label = "Миньон: хорошо умеет (+2)"),
+					interactions.SelectOption( value = "minion_-2", label = "Миньон: плохо умеет (-2)"),
+				]
+			),
+		],
+		
+	)
+	
+	
+
+@bot.component("menu_component_approach")
+async def select_approach(ctx, approach: str):
+	char_id = State.characters.get(ctx.author.id)
+	char_name = ""
+	if char_id is not None:
+		with session_scope() as session:
+			char_name = Adventurer.get_by_id(session,char_id).name
+	State.roll_approaches[ctx.message.id] = approach
+	
+	stat_select_modal = interactions.Modal(
+		title = "FATE Roll",
+		custom_id="fate_roll_form",
+		components = [
+			interactions.TextInput(
+				style=interactions.TextStyleType.SHORT,
+				label="Имя персонажа",
+				custom_id="text_input_char_name",
+				min_length=2,
+				max_length=50,
+				value = char_name
+			),
+			interactions.TextInput(
+				style=interactions.TextStyleType.SHORT,
+				label="Иллюстрация действия",
+				custom_id="text_input_pic_url",
+				min_length=2,
+				max_length=1000,
+				required = False
+			),
+			interactions.TextInput(
+				style=interactions.TextStyleType.PARAGRAPH,
+				label="Действие",
+				custom_id="text_input_rp_description",
+				min_length=0,
+				max_length=2000,
+				required = False
+			),
+			
+		]
+	)
+	await ctx.popup(stat_select_modal)
+
+@bot.modal("fate_roll_form")
+async def proceed_with_fate_roll(ctx, char_name: str, pic_url: typing.Optional[str], rp_description: typing.Optional[str]):
+	total = 0
+	title = ""
+	result = []
+	approach = State.roll_approaches.pop(ctx.message.id)[0]
+	print(approach)
+	if approach.startswith("minion_"):
+		mod = int( approach[7:])
+		result = []
+		total = mod
+		for i in range(4):
+			roll = randint(1,6)
+			result.append(roll)
+			if roll>4:
+				total+=1
+			if roll<3:
+				total-=1
+		title = f"{char_name} делает бросок ({'+' if mod>0 else ''}{mod})"
+		
+	else:
+		with session_scope() as session:
+			heroes = Adventurer.name_owner_search(session,char_name,int(ctx.user.id))
+			if len(heroes)==0:
+				await ctx.send('Герой не найден!', ephemeral = True)
+				return interactions.StopCommand
+			elif len(heroes)==1:
+				State.characters[ctx.author.id] = heroes[0].id
+				mod = heroes[0].get_stat(approach)
+				title = f"{heroes[0].name} делает проверку на {stat_to_russian[approach]} ({'+' if mod>0 else ''}{mod})"
+				total, result = heroes[0].make_check(approach)
+			else:
+				msg = 'Найдено несколько, уточните:\n'
+				for hero in heroes:
+					msg += f'{hero.name}\n'
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+	embeds = []
+	mech_embed = interactions.Embed(
+		title = title,
+		description = f"Результат: {total} {result}"
+	)
+	
+	
+	if pic_url!="" or rp_description!="":
+		rp_embed = interactions.Embed(
+			title = title,
+			description = "~~~" if rp_description=="" else rp_description,
+			image = interactions.EmbedImageStruct(url = pic_url) if pic_url!="" else None
+		)
+		embeds.append(rp_embed)
+	embeds.append(mech_embed)
+	await ctx.send(embeds = embeds)
+	
 bot.start()
