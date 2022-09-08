@@ -232,8 +232,8 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 		else:
 			msg = 'Найдено несколько, уточните:\n'
 			for hero in heroes:
-				user = await bot.fetch_user(hero.owner_id)
-				msg += f'{hero.name} ({user.display_name})\n'
+				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
+				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
 			await ctx.send(msg)
 
 
