@@ -224,7 +224,7 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 					title = heroes[0].name,
 					description = heroes[0].description
 				)
-				msg = await ctx.send("Найденный герой:", embeds = [embed, description_embed])
+				msg = await ctx.send("Найденный герой:", embeds = [description_embed, embed, ])
 			except Exception as ex:
 				print(f"Error: {e}")
 			#for it in heroes[0].profile_russian():
@@ -232,6 +232,20 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 		else:
 			msg = 'Найдено несколько, уточните:\n'
 			for hero in heroes:
+				if hero.name == name: #Exact name match
+					try:
+						embed = interactions.Embed(title = hero.name)
+						embed.add_field("Ресрурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
+						embed.add_field("Подходы", hero.stats_message)
+						print(embed)
+						description_embed = interactions.Embed(
+							title = hero.name,
+							description = hero.description
+						)
+						msg = await ctx.send("Найденный герой:", embeds = [description_embed, embed, ])
+						return interactions.StopCommand
+					except Exception as ex:
+						print(f"Error: {e}")
 				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
 				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
 			await ctx.send(msg)
