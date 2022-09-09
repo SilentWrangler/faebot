@@ -214,6 +214,7 @@ async def creation_done(ctx):
 	else:
 		if creator.ctx.user.id == ctx.user.id:
 			creator.finish()
+			del State.creators[ctx.message.id]
 			await ctx.send("Герой создан.")
 		else:
 			await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
@@ -542,7 +543,7 @@ async def gm_fate_set(ctx, char_name: str, amount: int):
 			return interactions.StopCommand
 		elif len(heroes)==1:
 			old_fate = heroes[0].fate
-			heroes[0].fate += amount
+			heroes[0].fate = amount
 			new_fate = heroes[0].fate
 			heroes[0].save(session)
 			full_name = heroes[0].name
@@ -552,7 +553,7 @@ async def gm_fate_set(ctx, char_name: str, amount: int):
 			for hero in heroes:
 				if hero.name == char_name: #Exact name match
 					old_fate = hero.fate
-					hero.fate += amount
+					hero.fate = amount
 					new_fate = hero.fate
 					hero.save(session)
 					full_name = hero.name
@@ -564,5 +565,172 @@ async def gm_fate_set(ctx, char_name: str, amount: int):
 				await ctx.send(msg, ephemeral = True)
 				return interactions.StopCommand
 		await ctx.send(f'{full_name}: жетоны судьбы {old_fate} → {new_fate}')
+
+@gm.group(name = "fate", description = "Управление стрессом")
+async def gm_stress(ctx):
+	pass
+
+@gm_stress.subcommand(name = "give", description = "Нанести/вылечить урон")
+@interactions.option(description = "Имя персонажа")
+@interactions.option(description = "Количество урона. Отрицательное для лечения.")
+async def gm_stress_give(ctx, char_name: str, amount: int):
+	with session_scope() as session:
+		heroes = Adventurer.name_search(session,char_name)
+		old_stress, new_stress = 0, 0
+		full_name = char_name
+		print(heroes)
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+			return interactions.StopCommand
+		elif len(heroes)==1:
+			old_stress = heroes[0].stress
+			heroes[0].stress = amount
+			new_stress = heroes[0].stress
+			heroes[0].save(session)
+			full_name = heroes[0].name
+		else:
+			msg = 'Найдено несколько, уточните:\n'
+			notFound = True
+			for hero in heroes:
+				if hero.name == char_name: #Exact name match
+					old_stress = hero.stress
+					hero.stress += amount
+					new_stress = hero.stress
+					hero.save(session)
+					full_name = hero.name
+					notFound = False
+					break
+				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
+				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
+			if notFound:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		await ctx.send(f'{full_name}: стресс {old_stress} → {new_stress}')
+
+
+@gm_stress.subcommand(name = "set", description = "Установить стресс")
+@interactions.option(description = "Имя персонажа")
+@interactions.option(description = "Значение стресса.")
+async def gm_stress_set(ctx, char_name: str, amount: int):
+	with session_scope() as session:
+		heroes = Adventurer.name_search(session,char_name)
+		old_stress, new_stress = 0, 0
+		full_name = char_name
+		print(heroes)
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+			return interactions.StopCommand
+		elif len(heroes)==1:
+			old_stress = heroes[0].stress
+			heroes[0].stress = amount
+			new_stress = heroes[0].stress
+			heroes[0].save(session)
+			full_name = heroes[0].name
+		else:
+			msg = 'Найдено несколько, уточните:\n'
+			notFound = True
+			for hero in heroes:
+				if hero.name == char_name: #Exact name match
+					old_stress = hero.stress
+					hero.stress = amount
+					new_stress = hero.stress
+					hero.save(session)
+					full_name = hero.name
+					notFound = False
+					break
+				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
+				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
+			if notFound:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		await ctx.send(f'{full_name}: стресс {old_stress} → {new_stress}')
+
+@gm.group(name = "exp", description = "Управление опытом")
+async def gm_exp(ctx):
+    pass
+
+
+@gm_exp.subcommand(name = "give", description = "Выдать/отобрать опыт")
+@interactions.option(description = "Имя персонажа, которому выдаётся опыт")
+@interactions.option(description = "Количество опыта. Отрицательное, если надо отобрать")
+async def gm_exp_give(ctx, char_name: str, amount: int):
+	print("gm_exp_give")
+	with session_scope() as session:
+		print("	session open")
+		heroes = Adventurer.name_search(session,char_name)
+		print("	search performed")
+		old_exp, new_exp = 0, 0
+		full_name = char_name
+		print(heroes)
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+			return interactions.StopCommand
+		elif len(heroes)==1:
+			old_exp = heroes[0].exp
+			heroes[0].exp += amount
+			new_exp = heroes[0].exp
+			heroes[0].save(session)
+			full_name = heroes[0].name
+		else:
+			msg = 'Найдено несколько, уточните:
+'
+			notFound = True
+			for hero in heroes:
+				if hero.name == char_name: #Exact name match
+					old_exp = hero.exp
+					hero.exp += amount
+					new_exp = hero.exp
+					hero.save(session)
+					full_name = hero.name
+					notFound = False
+					break
+				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
+				msg += f'{hero.name} ({user.username}#{user.discriminator})
+'
+			if notFound:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		await ctx.send(f'{full_name}: опыт {old_exp} → {new_exp}')
+
+
+
+@gm_exp.subcommand(name = "set", description = "Установить количество опыта")
+@interactions.option(description = "Имя персонажа, которому выдаётся опыт")
+@interactions.option(description = "Количество опыта.")
+async def gm_exp_set(ctx, char_name: str, amount: int):
+	with session_scope() as session:
+		heroes = Adventurer.name_search(session,char_name)
+		old_exp, new_exp = 0, 0
+		full_name = char_name
+		print(heroes)
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+			return interactions.StopCommand
+		elif len(heroes)==1:
+			old_exp = heroes[0].exp
+			heroes[0].exp = amount
+			new_exp = heroes[0].exp
+			heroes[0].save(session)
+			full_name = heroes[0].name
+		else:
+			msg = 'Найдено несколько, уточните:
+'
+			notFound = True
+			for hero in heroes:
+				if hero.name == char_name: #Exact name match
+					old_exp = hero.exp
+					hero.exp = amount
+					new_exp = hero.exp
+					hero.save(session)
+					full_name = hero.name
+					notFound = False
+					break
+				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
+				msg += f'{hero.name} ({user.username}#{user.discriminator})
+'
+			if notFound:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		await ctx.send(f'{full_name}: опыт {old_exp} → {new_exp}')
 
 bot.start()
