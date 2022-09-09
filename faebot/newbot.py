@@ -6,7 +6,7 @@ import typing
 from dotenv import load_dotenv
 from random import randint
 
-from db import HeroCreatorV2, Adventurer, session_scope
+from db import HeroCreatorV2, Adventurer, session_scope, HeroLvlUp
 
 
 BASEDIR = os.path.abspath(os.path.dirname(__file__))
@@ -29,6 +29,7 @@ class State:
 	creators = dict()
 	characters = dict()
 	updated_characters = dict()
+	damaged_characters = dict()
 	roll_approaches = dict()
 
 @bot.command(
@@ -145,10 +146,14 @@ async def proceed_with_making(ctx, char_name: str, char_desc: str):
 			State.creators[msg.id] = creator
 
 async def update_creator(ctx, creator):
-	if creator.stats_left > 0:
-		await ctx.edit(creator.message, components = creation_rows)
+	if isinstance(creator, HeroLvlUp):
+		await ctx.edit(creator.message, components = upgrade_rows)
 	else:
-		await ctx.edit(creator.message, components =[pick_row, stat_rows,done_row ])
+		if creator.stats_left > 0:
+			await ctx.edit(creator.message, components = creation_rows)
+		else:
+			await ctx.edit(creator.message, components =[pick_row, stat_rows,done_row ])
+		
 
 @bot.component("stat_up_button")
 async def stat_up(ctx):
@@ -209,21 +214,89 @@ async def pick3_f(ctx):
 async def creation_done(ctx):
 	creator = State.creators.get(ctx.message.id)
 	if creator is None:
-		await ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
+		await ctx.send("Этот персонаж больше не создаётся/изменяется", ephemeral = True)
 	elif creator.done:
-		await ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
+		await ctx.send("Этот персонаж больше не создаётся/изменяется", ephemeral = True)
 	else:
 		if creator.ctx.user.id == ctx.user.id:
 			creator.finish()
 			State.creators.pop(ctx.message.id)
 			await ctx.send("Герой создан.")
 		else:
-			await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
+			await ctx.send("Этот персонаж создаётся/изменяется другим игроком",ephemeral = True)
 		
 		
 
 # =================================
 # END CHARACTER CREATION SECTION
+
+# START CHARACTER UPGRADE SECTION
+#======================================
+
+ 
+plus_one = interactions.Button(
+    style=interactions.ButtonStyle.SECONDARY,
+    label="+",
+    custom_id="plus_one"
+)
+
+minus_one = interactions.Button(
+    style=interactions.ButtonStyle.SECONDARY,
+    label="-",
+    custom_id="minus_one"
+)
+
+pm_row = interactions.ActionRow.new(minus_one, plus_one)
+
+upgrade_rows = [pick_row, pm_row, done_row]
+
+@char.subcommand()
+@interactions.option(description = "Имя героя для изменения")
+async def upgrade(ctx, name: str):
+	"""Использовать опыт для улучшения подходов"""
+	with session_scope() as session:
+		heroes = Adventurer.name_owner_search(session,name,int(ctx.author.id))
+		target = None
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+			return interactions.StopCommand
+		elif len(heroes)==1:
+			target = heroes[0]
+		else:
+			msg = 'Найдено несколько, уточните:\n'
+			for hero in heroes:
+				if hero.name == name:
+					target = hero
+					break
+				msg += f'{hero.name}\n'
+			if target is None:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		creator = HeroLvlUp(ctx,target)
+		msg = await ctx.send(creator.message, components = upgrade_rows)
+		State.creators[msg.id] = creator
+
+@bot.component("plus_one")
+async def plus_one_f(ctx):
+	creator = State.creators[ctx.message.id]
+	if creator.ctx.user.id == ctx.user.id:
+		creator.pick_selected_stat(1)
+		await update_creator(ctx,creator)
+	else:
+		await ctx.send("Этот персонаж изменяется другим игроком",ephemeral = True)
+
+@bot.component("minus_one")
+async def minus_one_f(ctx):
+	creator = State.creators[ctx.message.id]
+	if creator.ctx.user.id == ctx.user.id:
+		creator.pick_selected_stat(-1)
+		await update_creator(ctx,creator)
+	else:
+		await ctx.send("Этот персонаж изменяется другим игроком",ephemeral = True)
+	
+#======================================
+# END CHARACTER UPGRADE SECTION
+
 
 
 @char.subcommand()
@@ -238,7 +311,7 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 		elif len(heroes)==1:
 			try:
 				embed = interactions.Embed(title = heroes[0].name)
-				embed.add_field("Ресрурсы",f'**Жетоны:** {heroes[0].fate} **Стресс:** {heroes[0].stress} **Опыт:** {heroes[0].exp}')
+				embed.add_field("Ресурсы",f'**Жетоны:** {heroes[0].fate} **Стресс:** {heroes[0].stress} **Опыт:** {heroes[0].exp}')
 				embed.add_field("Подходы", heroes[0].stats_message)
 				
 				description_embed = interactions.Embed(
@@ -256,7 +329,7 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 				if hero.name == name: #Exact name match
 					try:
 						embed = interactions.Embed(title = hero.name)
-						embed.add_field("Ресрурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
+						embed.add_field("Ресурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
 						embed.add_field("Подходы", hero.stats_message)
 						
 						description_embed = interactions.Embed(
@@ -273,7 +346,7 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 
 
 @char.subcommand()
-@interactions.option(description = "Имя персонажа. Оставить пустым, чтобы просмотреть всех.")
+@interactions.option(description = "Имя персонажа, на которого надо переключиться.")
 async def switch(ctx, name: str):
 	"""Переключиться на героя"""
 	with session_scope() as session:
@@ -282,7 +355,7 @@ async def switch(ctx, name: str):
 			await ctx.send('Герой не найден!')
 		elif len(heroes)==1:
 			embed = interactions.Embed(title = heroes[0].name)
-			embed.add_field("Ресрурсы",f'**Жетоны:** {heroes[0].fate} **Стресс:** {heroes[0].stress} **Опыт:** {heroes[0].exp}')
+			embed.add_field("Ресурсы",f'**Жетоны:** {heroes[0].fate} **Стресс:** {heroes[0].stress} **Опыт:** {heroes[0].exp}')
 			embed.add_field("Подходы", heroes[0].stats_message)
 			print(embed)
 			description_embed = interactions.Embed(
@@ -297,7 +370,7 @@ async def switch(ctx, name: str):
 				if hero.name == name:
 					try:
 						embed = interactions.Embed(title = hero.name)
-						embed.add_field("Ресрурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
+						embed.add_field("Ресурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
 						embed.add_field("Подходы", hero.stats_message)
 						print(embed)
 						description_embed = interactions.Embed(
@@ -312,7 +385,7 @@ async def switch(ctx, name: str):
 				msg += f'{hero.name}\n'
 			await ctx.send(msg)
 
-#START CHARACTER CHANGE SECTION
+# START CHARACTER CHANGE SECTION
 #======================================
 @char.subcommand()
 @interactions.option(description = "Имя героя для изменения")
@@ -368,7 +441,7 @@ async def proceed_with_change(ctx, char_name: str, char_desc: str):
 		hero.description = char_desc
 		hero.save(session)
 		embed = interactions.Embed(title = hero.name)
-		embed.add_field("Ресрурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
+		embed.add_field("Ресурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
 		embed.add_field("Подходы", hero.stats_message)
 		
 		description_embed = interactions.Embed(
@@ -378,7 +451,10 @@ async def proceed_with_change(ctx, char_name: str, char_desc: str):
 		msg = await ctx.send("Изменение успешно!", embeds = [description_embed, embed, ])
 
 #======================================
-#END CHARACTER CHANGE SECTION
+# END CHARACTER CHANGE SECTION
+
+
+
 @bot.command()
 async def roll(ctx):
 	"""Бросок костей"""
@@ -411,7 +487,7 @@ async def roll_dice(ctx, dice: str):
 		result.append(randint(1,sides))
 		
 	await ctx.send(f"{dice}: {sum(result)} {result}")
-#START FATE ROLL SECTION
+# START FATE ROLL SECTION
 #======================================
 @roll.subcommand(name = "fate", description = "Бросок по системе FATE")
 async def roll_fate(ctx):
@@ -545,9 +621,9 @@ async def proceed_with_fate_roll(ctx, char_name: str, pic_url: typing.Optional[s
 	await ctx.send(embeds = embeds)
 	
 #======================================
-#END FATE ROLL SECTION
+# END FATE ROLL SECTION
 
-#START GM RESOURCE CONTROL SECTION
+# START GM RESOURCE CONTROL SECTION
 #======================================
 @bot.command()
 async def gm(ctx):
@@ -800,5 +876,7 @@ async def gm_exp_set(ctx, char_name: str, amount: int):
 		await ctx.send(f'{full_name}: опыт {old_exp} → {new_exp}')
 
 #======================================
-#END GM RESOURCE CONTROL SECTION
+# END GM RESOURCE CONTROL SECTION
+
+
 bot.start()
