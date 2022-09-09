@@ -7,6 +7,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 from dotenv import load_dotenv
+
+from warnings import warn
+import traceback
 BASEDIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(BASEDIR+'/../.env')
 
@@ -16,20 +19,22 @@ HOST = os.getenv('DB_HOST')
 NAME = os.getenv('DB_NAME')
 
 engine = create_engine(f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8', encoding='utf8')
-#engine = create_engine('sqlite:///:memory:', echo=True)
+#engine = create_engine('sqlite:///testbase.db?charset=utf8', echo=True)
 Session = sessionmaker(bind=engine)
 
 
 @contextmanager
 def session_scope():
-    session = Session()
-    try:
-        yield session
-        session.commit()
-    except:
-        session.rollback()
-    finally:
-        session.close()
+	session = Session()
+	try:
+		yield session
+		session.commit()
+	except Exception as ex:
+		print(ex)
+		traceback.print_tb(ex.__traceback__)
+		session.rollback()
+	finally:
+		session.close()
 
 Base = declarative_base()
 
@@ -119,6 +124,18 @@ class Adventurer(Base):
             f'Достаток: {self.rich}'
             )
             ]
+    @property
+    def stats_message(self):
+        return (
+		    f'Аккуратность: {self.careful}\n'
+		    f'Эффектность: {self.flashy}\n'
+		    f'Проворность: {self.quick}\n'
+	        f'Сила: {self.strong}\n'
+	        f'Ум: {self.clever}\n'
+	        f'Хитрость: {self.sneaky}\n'
+	        f'Достаток: {self.rich}'
+        )
+	
     def save(self, session):
         session.add(self)
         session.commit()
@@ -194,6 +211,7 @@ class HeroCreator:
         return cls.emoji_to_number.get(em, None)
 
     def __init__(self, user, hook):
+        warn(f'{self.__class__.__name__} will be deprecated.', DeprecationWarning, stacklevel=2)
         self.user = user
         self.hook = hook
         self.done = False
@@ -288,5 +306,127 @@ class HeroCreator:
 
 
 
+class HeroCreatorV2:
+	stat_names = ['Аккуратность','Эффектность','Проворность','Сила','Ум','Хитрость','Достаток']
+	def __init__(self,ctx, name, description):
+		self.ctx = ctx
+		self.hero = Adventurer(
+			fate = 3, stress = 0, exp = 0,
+			owner_id = int(ctx.user.id),
+			name = name, description = description
+		)
+		self.stats = [3,2,2,1,1,1,0]
+		self.stat_picks = [-1,-1,-1,-1,-1,-1,-1]
+		self.exp = 0
+		self.selected_stat = 0
+		self.done = False
+		
+	@property
+	def message(self):
+			msg = f"**{self.hero.name}**\n\n"
+			dsc = self.hero.description
+			if len(dsc)>200:
+				dsc = dsc[0:200] + "(...)"
+			msg += dsc
+			
+			msg += f'\n Подходы: {self.stats}\n'
+			stat = ''
+			for i in range(len(self.stat_picks)):
+				stat += "> " if i==self.selected_stat else "+ "
+				stat += HeroCreatorV2.stat_names[i]
+				stat += " -" if self.stat_picks[i] == -1 else f" {self.stat_picks[i]}"
+				stat += "\n"
+			msg += stat
+			return msg
+		
+	@property
+	def stats_left(self):
+		return len(self.stats)
+		
+	def change_selected_stat(self, direction):
+		self.selected_stat += direction
+		if self.selected_stat < 0:
+			self.selected_stat = 0
+		if self.selected_stat >= len(self.stat_picks):
+			self.selected_stat = len(self.stat_picks) - 1
+	
+	def pick_selected_stat(self, stat):
+		if stat in self.stats:
+			self.stat_picks[self.selected_stat] = stat
+			self.stats.remove(stat)
+		elif stat in self.stat_picks:
+			idx = self.stat_picks.index(stat)
+			self.stat_picks[idx], self.stat_picks[self.selected_stat] = self.stat_picks[self.selected_stat], self.stat_picks[idx]
+	
+	def finish(self):
+		self.hero.careful = self.stat_picks[0]
+		self.hero.flashy  = self.stat_picks[1]
+		self.hero.quick   = self.stat_picks[2]
+		self.hero.strong  = self.stat_picks[3]
+		self.hero.clever  = self.stat_picks[4]
+		self.hero.sneaky  = self.stat_picks[5]
+		self.hero.rich    = self.stat_picks[6]
+		self.hero.exp = self.exp
+		with session_scope() as s:
+			s.add(self.hero)
+			s.commit()
+			s.close()
+			self.done = True
 
 
+class HeroLvlUp(HeroCreatorV2):
+	def __init__(self,ctx, hero):
+		self.ctx = ctx
+		self.hero = hero
+		self.exp = hero.exp
+		
+		self.hero_name = hero.name
+		self.hero_description = hero.description
+		self.hero_id = hero.id
+		
+		self.stats =(
+			self.hero.careful,
+			self.hero.flashy ,
+			self.hero.quick  ,
+			self.hero.strong ,
+			self.hero.clever , 
+			self.hero.sneaky , 
+			self.hero.rich   
+		)
+		self.stat_picks = list(self.stats)
+		self.selected_stat = 0
+		self.done = False
+		
+	def change_selected_stat(self, direction):
+		self.selected_stat += direction
+		if self.selected_stat < 0:
+			self.selected_stat = 0
+		if self.selected_stat >= len(self.stat_picks):
+			self.selected_stat = len(self.stat_picks) - 1
+	
+	def pick_selected_stat(self,stat):
+		oldstat = self.stat_picks[self.selected_stat]
+		newstat = max(self.stats[self.selected_stat], oldstat + stat)
+		newstat = min(newstat, oldstat + max(self.exp,0))
+		self.stat_picks[self.selected_stat] = newstat
+		diff = newstat - oldstat
+		self.exp -= diff
+			
+	@property
+	def message(self):
+			msg = f"**{self.hero_name}**\n\n"
+			dsc = self.hero_description
+			if len(dsc)>200:
+				dsc = dsc[0:200] + "(...)"
+			msg += dsc
+			
+			msg += f'\n Опыт: {self.exp}\n'
+			stat = ''
+			for i in range(len(self.stat_picks)):
+				stat += "> " if i==self.selected_stat else "+ "
+				stat += HeroCreatorV2.stat_names[i]
+				stat += " -" if self.stat_picks[i] == -1 else f" {self.stat_picks[i]}"
+				stat += "\n"
+			msg += stat
+			return msg	
+		
