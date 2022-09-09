@@ -479,6 +479,8 @@ async def proceed_with_fate_roll(ctx, char_name: str, pic_url: typing.Optional[s
 #======================================
 #END FATE ROLL SECTION
 
+#START GM RESOURCE CONTROL SECTION
+#======================================
 @bot.command()
 async def gm(ctx):
 	"""Команды для гейммастера, должны ограничиваться разрешением"""
@@ -672,8 +674,7 @@ async def gm_exp_give(ctx, char_name: str, amount: int):
 			heroes[0].save(session)
 			full_name = heroes[0].name
 		else:
-			msg = 'Найдено несколько, уточните:
-'
+			msg = 'Найдено несколько, уточните:'
 			notFound = True
 			for hero in heroes:
 				if hero.name == char_name: #Exact name match
@@ -685,8 +686,7 @@ async def gm_exp_give(ctx, char_name: str, amount: int):
 					notFound = False
 					break
 				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
-				msg += f'{hero.name} ({user.username}#{user.discriminator})
-'
+				msg += f'{hero.name} ({user.username}#{user.discriminator})'
 			if notFound:
 				await ctx.send(msg, ephemeral = True)
 				return interactions.StopCommand
@@ -713,8 +713,7 @@ async def gm_exp_set(ctx, char_name: str, amount: int):
 			heroes[0].save(session)
 			full_name = heroes[0].name
 		else:
-			msg = 'Найдено несколько, уточните:
-'
+			msg = 'Найдено несколько, уточните:'
 			notFound = True
 			for hero in heroes:
 				if hero.name == char_name: #Exact name match
@@ -726,11 +725,12 @@ async def gm_exp_set(ctx, char_name: str, amount: int):
 					notFound = False
 					break
 				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
-				msg += f'{hero.name} ({user.username}#{user.discriminator})
-'
+				msg += f'{hero.name} ({user.username}#{user.discriminator})'
 			if notFound:
 				await ctx.send(msg, ephemeral = True)
 				return interactions.StopCommand
 		await ctx.send(f'{full_name}: опыт {old_exp} → {new_exp}')
 
+#======================================
+#END GM RESOURCE CONTROL SECTION
 bot.start()
