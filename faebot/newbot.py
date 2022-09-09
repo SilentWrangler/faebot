@@ -155,6 +155,8 @@ async def stat_up(ctx):
 	if creator.ctx.user.id == ctx.user.id:
 		creator.change_selected_stat(-1)
 		await update_creator(ctx,creator)
+	else:
+		await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
 
 @bot.component("stat_down_button")
 async def stat_down(ctx):
@@ -162,6 +164,8 @@ async def stat_down(ctx):
 	if creator.ctx.user.id == ctx.user.id:
 		creator.change_selected_stat(1)
 		await update_creator(ctx,creator)
+	else:
+		await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
 
 @bot.component("pick0")
 async def pick0_f(ctx):
@@ -169,6 +173,8 @@ async def pick0_f(ctx):
 	if creator.ctx.user.id == ctx.user.id:
 		creator.pick_selected_stat(0)
 		await update_creator(ctx,creator)
+	else:
+		await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
 
 @bot.component("pick1")
 async def pick1_f(ctx):
@@ -176,28 +182,41 @@ async def pick1_f(ctx):
 	if creator.ctx.user.id == ctx.user.id:
 		creator.pick_selected_stat(1)
 		await update_creator(ctx,creator)
-
+	else:
+		await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
+	
 @bot.component("pick2")
 async def pick2_f(ctx):
 	creator = State.creators[ctx.message.id]
 	if creator.ctx.user.id == ctx.user.id:
 		creator.pick_selected_stat(2)
 		await update_creator(ctx,creator)
-		
+	else:
+		await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
+	
 @bot.component("pick3")
 async def pick3_f(ctx):
 	creator = State.creators[ctx.message.id]
 	if creator.ctx.user.id == ctx.user.id:
 		creator.pick_selected_stat(3)
 		await update_creator(ctx,creator)
+	else:
+		await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
 
 
 @bot.component("creation_done_button")
 async def creation_done(ctx):
-	creator = State.creators[ctx.message.id]
-	if creator.ctx.user.id == ctx.user.id:
-		creator.finish()
-		await ctx.send("Герой создан.")
+	creator = State.creators.get(ctx.message.id)
+	if creator is None:
+		await.ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
+	elif creator.done:
+		await.ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
+	else:
+		if creator.ctx.user.id == ctx.user.id:
+			creator.finish()
+			await ctx.send("Герой создан.")
+		else:
+			await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
 		
 		
 
