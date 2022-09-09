@@ -18,8 +18,8 @@ PASS = os.getenv('DB_PASS')
 HOST = os.getenv('DB_HOST')
 NAME = os.getenv('DB_NAME')
 
-#engine = create_engine(f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8', encoding='utf8')
-engine = create_engine('sqlite:///testbase.db?charset=utf8', echo=True)
+engine = create_engine(f'mysql://{USER}:{PASS}@{HOST}/{NAME}?charset=utf8', encoding='utf8')
+#engine = create_engine('sqlite:///testbase.db?charset=utf8', echo=True)
 Session = sessionmaker(bind=engine)
 
 
