@@ -28,6 +28,7 @@ stat_to_russian = {
 class State:
 	creators = dict()
 	characters = dict()
+	updated_characters = dict()
 	roll_approaches = dict()
 
 @bot.command(
@@ -208,13 +209,13 @@ async def pick3_f(ctx):
 async def creation_done(ctx):
 	creator = State.creators.get(ctx.message.id)
 	if creator is None:
-		await.ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
+		await ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
 	elif creator.done:
-		await.ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
+		await ctx.send("Этот персонаж больше не создаётся", ephemeral = True)
 	else:
 		if creator.ctx.user.id == ctx.user.id:
 			creator.finish()
-			del State.creators[ctx.message.id]
+			State.creators.pop(ctx.message.id)
 			await ctx.send("Герой создан.")
 		else:
 			await ctx.send("Этот персонаж создаётся другим игроком",ephemeral = True)
@@ -239,7 +240,7 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 				embed = interactions.Embed(title = heroes[0].name)
 				embed.add_field("Ресрурсы",f'**Жетоны:** {heroes[0].fate} **Стресс:** {heroes[0].stress} **Опыт:** {heroes[0].exp}')
 				embed.add_field("Подходы", heroes[0].stats_message)
-				print(embed)
+				
 				description_embed = interactions.Embed(
 					title = heroes[0].name,
 					description = heroes[0].description
@@ -257,7 +258,7 @@ async def look(ctx: interactions.CommandContext, name: str = ""):
 						embed = interactions.Embed(title = hero.name)
 						embed.add_field("Ресрурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
 						embed.add_field("Подходы", hero.stats_message)
-						print(embed)
+						
 						description_embed = interactions.Embed(
 							title = hero.name,
 							description = hero.description
@@ -311,6 +312,73 @@ async def switch(ctx, name: str):
 				msg += f'{hero.name}\n'
 			await ctx.send(msg)
 
+#START CHARACTER CHANGE SECTION
+#======================================
+@char.subcommand()
+@interactions.option(description = "Имя героя для изменения")
+async def change(ctx, name: str):
+	"""Изменить имя и описание персонажа"""
+	with session_scope() as session:
+		heroes = Adventurer.name_owner_search(session,name,int(ctx.author.id))
+		target = None
+		if len(heroes)==0:
+			await ctx.send('Герой не найден!', ephemeral = True)
+		elif len(heroes)==1:
+			target = heroes[0]
+		else:
+			msg = 'Найдено несколько, уточните:\n'
+			for hero in heroes:
+				if hero.name == name:
+					target = hero
+					break
+				msg += f'{hero.name}\n'
+			if target is None:
+				await ctx.send(msg, ephemeral = True)
+				return interactions.StopCommand
+		update_modal = interactions.Modal(
+			title="Создание персонажа",
+			custom_id="update_char_form",
+			components=[
+				interactions.TextInput(
+					style=interactions.TextStyleType.SHORT,
+					label="Имя персонажа",
+					custom_id="text_input_char_name",
+					min_length=2,
+					max_length=50,
+					value = target.name
+				),
+					interactions.TextInput(
+					style=interactions.TextStyleType.PARAGRAPH,
+					label="Описание персонажа, аспекты и трюки",
+					custom_id="text_input_char_desc",
+					min_length=10,
+					max_length=2000,
+					value = target.description
+				)
+			],
+		)
+		State.updated_characters[ctx.user.id] = target.id
+		await ctx.popup(update_modal)
+		
+@bot.modal("update_char_form")
+async def proceed_with_change(ctx, char_name: str, char_desc: str):
+	with session_scope() as session:
+		hero = Adventurer.get_by_id(session, State.updated_characters.pop(ctx.user.id))
+		hero.name = char_name
+		hero.description = char_desc
+		hero.save(session)
+		embed = interactions.Embed(title = hero.name)
+		embed.add_field("Ресрурсы",f'**Жетоны:** {hero.fate} **Стресс:** {hero.stress} **Опыт:** {hero.exp}')
+		embed.add_field("Подходы", hero.stats_message)
+		
+		description_embed = interactions.Embed(
+			title = hero.name,
+			description = hero.description
+		)
+		msg = await ctx.send("Изменение успешно!", embeds = [description_embed, embed, ])
+
+#======================================
+#END CHARACTER CHANGE SECTION
 @bot.command()
 async def roll(ctx):
 	"""Бросок костей"""
@@ -568,7 +636,7 @@ async def gm_fate_set(ctx, char_name: str, amount: int):
 				return interactions.StopCommand
 		await ctx.send(f'{full_name}: жетоны судьбы {old_fate} → {new_fate}')
 
-@gm.group(name = "fate", description = "Управление стрессом")
+@gm.group(name = "stress", description = "Управление стрессом")
 async def gm_stress(ctx):
 	pass
 
@@ -674,7 +742,7 @@ async def gm_exp_give(ctx, char_name: str, amount: int):
 			heroes[0].save(session)
 			full_name = heroes[0].name
 		else:
-			msg = 'Найдено несколько, уточните:'
+			msg = 'Найдено несколько, уточните:\n'
 			notFound = True
 			for hero in heroes:
 				if hero.name == char_name: #Exact name match
@@ -686,7 +754,7 @@ async def gm_exp_give(ctx, char_name: str, amount: int):
 					notFound = False
 					break
 				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
-				msg += f'{hero.name} ({user.username}#{user.discriminator})'
+				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
 			if notFound:
 				await ctx.send(msg, ephemeral = True)
 				return interactions.StopCommand
@@ -713,7 +781,7 @@ async def gm_exp_set(ctx, char_name: str, amount: int):
 			heroes[0].save(session)
 			full_name = heroes[0].name
 		else:
-			msg = 'Найдено несколько, уточните:'
+			msg = 'Найдено несколько, уточните:\n'
 			notFound = True
 			for hero in heroes:
 				if hero.name == char_name: #Exact name match
@@ -725,7 +793,7 @@ async def gm_exp_set(ctx, char_name: str, amount: int):
 					notFound = False
 					break
 				user = await interactions.get(bot, interactions.User, object_id=hero.owner_id)
-				msg += f'{hero.name} ({user.username}#{user.discriminator})'
+				msg += f'{hero.name} ({user.username}#{user.discriminator})\n'
 			if notFound:
 				await ctx.send(msg, ephemeral = True)
 				return interactions.StopCommand
